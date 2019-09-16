@@ -17,6 +17,7 @@
  *
  *=========================================================================*/
 
+#include <nifti1_io.h>
 #include "selxNiftyregf3dComponent.h"
 #include "selxCheckTemplateProperties.h"
 
@@ -25,7 +26,14 @@ namespace selx
 template< class TPixel >
 Niftyregf3dComponent< TPixel >::Niftyregf3dComponent( const std::string & name, LoggerImpl & logger ) : Superclass( name, logger )
 {
-  m_reg_f3d = new reg_f3d< TPixel >( 1, 1 );
+  this->m_reg_f3d = new reg_f3d< TPixel >( 1, 1 );
+
+  // Set spacing to positive values in mm. The default values are (-5 -5 -5) which NiftyReg interprets as spacing in voxels.
+  this->m_reg_f3d->SetSpacing(0, 5);
+  this->m_reg_f3d->SetSpacing(1, 5);
+  this->m_reg_f3d->SetSpacing(2, 5);
+
+  this->m_reg_f3d->SetWarpedPaddingValue(0.);
 }
 
 
@@ -62,11 +70,34 @@ Niftyregf3dComponent< TPixel >
 template< class TPixel >
 int
 Niftyregf3dComponent< TPixel >
-::Accept( typename NiftyregAffineMatrixInterface< TPixel >::Pointer component )
+::Accept( typename NiftyregAffineMatrixInterface::Pointer component )
 {
   this->m_NiftyregAffineMatrixInterface = component;
   return 0;
 }
+
+template< class TPixel >
+int
+Niftyregf3dComponent< TPixel >
+::Accept( typename NiftyregControlPointPositionImageInterface< TPixel >::Pointer component )
+{
+  this->m_reg_f3d->SetControlPointGridImage(component->GetControlPointPositionImage().get());
+  return 0;
+}
+
+
+template< class TPixel >
+int
+Niftyregf3dComponent< TPixel >
+::Accept(typename NiftyregInputMaskInterface<  unsigned char  >::Pointer component)
+{
+  // store the shared_ptr to the data, otherwise it gets freed
+  this->m_input_mask = component->GetInputMask();
+  // connect the itk pipeline
+  this->m_reg_f3d->SetReferenceMask( this->m_input_mask.get() );
+  return 0;
+}
+
 
 template< class TPixel >
 std::shared_ptr< nifti_image >
@@ -257,7 +288,7 @@ Niftyregf3dComponent<  TPixel >
       return false;
     }
   }
-  else if( criterion.first == "NumberOfIterations" || criterion.first == "MaximalIterationNumber" ) //Supports this?
+  else if( criterion.first == "NumberOfIterations" || criterion.first == "MaximumNumberOfIterations" || criterion.first == "MaximalIterationNumber" ) //Supports this?
   {
     meetsCriteria = true;
     if( criterion.second.size() == 1 )
@@ -320,6 +351,25 @@ Niftyregf3dComponent<  TPixel >
       this->m_reg_f3d->SetSpacing( d, std::stof( criterion.second[ d ] ) );
     }
     meetsCriteria = true;
+  }
+  else if( criterion.first == "GridSpacingInPhysicalUnits" ) //Supports this?
+  {
+    for( unsigned int d = 0; d < criterion.second.size(); ++d )
+    {
+      this->m_reg_f3d->SetSpacing( d, -std::stof( criterion.second[ d ] ) );
+    }
+    meetsCriteria = true;
+  }
+  else if( criterion.first == "SmoothingSigma" )
+  {
+    meetsCriteria = true;
+    if( criterion.second.size() > 1 )
+    {
+      this->Error("NiftyReg does not support multiple smoothing sigmas. Only the first image is smoothed.");
+      meetsCriteria = false;
+    }
+    this->m_reg_f3d->SetReferenceSmoothingSigma( std::stof( criterion.second[ 0 ] ) );
+    this->m_reg_f3d->SetFloatingSmoothingSigma( std::stof( criterion.second[ 0 ] ) );
   }
   return meetsCriteria;
 }

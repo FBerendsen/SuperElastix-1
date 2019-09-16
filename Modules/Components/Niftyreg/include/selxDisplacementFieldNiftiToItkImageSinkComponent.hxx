@@ -52,10 +52,12 @@ template< int Dimensionality, class TPixel >
 int
 DisplacementFieldNiftiToItkImageSinkComponent< Dimensionality, TPixel >::Accept( typename ItkImageDomainInterfaceType::Pointer other )
 {
-  // Store pointer to the m_ImageDomainInterface for getting the result image after in has been generated (registration).
-  // TODO: sanity check that m_ImageDomainInterface was Null to detect if Set was called more than once erroneously.
-  m_MiniPipelineOutputImage->SetRegions( other->GetItkImageDomainFixed()->GetLargestPossibleRegion() );
-  //this->m_ImageDomainInterface = other;
+  // Set information which is needed when network is instantiated
+  this->m_MiniPipelineOutputImage->SetRegions( other->GetItkImageDomainFixed()->GetLargestPossibleRegion() );
+  this->m_MiniPipelineOutputImage->CopyInformation( other->GetItkImageDomainFixed());
+
+  // Store pointer to the m_ImageDomainInterface for setting domain after image has been generated.
+  this->m_ImageDomainInterface = other;
   return 0;
 }
 
@@ -64,6 +66,7 @@ template< int Dimensionality, class TPixel >
 void
 DisplacementFieldNiftiToItkImageSinkComponent< Dimensionality, TPixel >::SetMiniPipelineOutput( itk::DataObject::Pointer NetworkBuilderOutput )
 {
+  // KM: Why is all this commented out?
   /** Tries to cast the NetworkBuilderOutput to an image (data object) and stores the result.
   *  The resulting output image will be grafted into when the sink component is connected to an other component.
   * */
@@ -110,7 +113,6 @@ DisplacementFieldNiftiToItkImageSinkComponent< Dimensionality, TPixel >::Update(
 {
   auto displacementFieldNiftiImage = this->m_DisplacementFieldInterface->GetDisplacementFieldNiftiImage();
   auto displacementFieldItkImage   = NiftiToItkImage< ItkDisplacementFieldType, TPixel >::Convert( displacementFieldNiftiImage );
-  //auto displacementFieldItkImage = NiftiToItkImage< itk::Image< TPixel, Dimensionality >, TPixel >::Convert(displacementFieldNiftiImage);
   this->m_MiniPipelineOutputImage->Graft( displacementFieldItkImage );
 }
 

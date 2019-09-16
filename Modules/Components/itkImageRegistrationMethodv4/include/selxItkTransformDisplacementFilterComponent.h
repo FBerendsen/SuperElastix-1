@@ -41,7 +41,7 @@ class ItkTransformDisplacementFilterComponent :
   Accepting< itkTransformInterface< TInternalComputationValue, Dimensionality >,
   itkImageDomainFixedInterface< Dimensionality >
   >,
-  Providing< DisplacementFieldItkImageSourceInterface< Dimensionality, TPixel >,
+  Providing< itkDisplacementFieldInterface< Dimensionality, TPixel >,
   UpdateInterface
   >
   >
@@ -56,7 +56,7 @@ public:
     Accepting< itkTransformInterface< TInternalComputationValue, Dimensionality >,
     itkImageDomainFixedInterface< Dimensionality >
     >,
-    Providing< DisplacementFieldItkImageSourceInterface< Dimensionality, TPixel >,
+    Providing< itkDisplacementFieldInterface< Dimensionality, TPixel >,
     UpdateInterface
     >
     >                                     Superclass;
@@ -70,22 +70,23 @@ public:
 
   // Get the type definitions from the interfaces
   using itkImageDomainFixedType    = typename itkImageDomainFixedInterface< Dimensionality >::ItkImageDomainType;
-  using DisplacementFieldImageType =  typename DisplacementFieldItkImageSourceInterface< Dimensionality, TPixel >::ItkImageType;
+  using DisplacementFieldType =  typename itkDisplacementFieldInterface< Dimensionality, TPixel >::ItkDisplacementFieldType;
 
-  using DisplacementFieldFilterType = itk::TransformToDisplacementFieldFilter< DisplacementFieldImageType >;
+  using DisplacementFieldFilterType = itk::TransformToDisplacementFieldFilter< DisplacementFieldType >;
 
   //Accepting Interfaces:
-  virtual int Accept( typename itkImageDomainFixedInterface< Dimensionality >::Pointer ) override;
+  int Accept( typename itkImageDomainFixedInterface< Dimensionality >::Pointer ) override;
 
-  virtual int Accept( typename itkTransformInterface< TInternalComputationValue, Dimensionality >::Pointer ) override;
+  int Accept( typename itkTransformInterface< TInternalComputationValue, Dimensionality >::Pointer ) override;
 
   //Providing Interfaces:
-  virtual typename DisplacementFieldImageType::Pointer GetDisplacementFieldItkImage() override;
+  typename DisplacementFieldType::Pointer GetItkDisplacementField() override;
 
-  virtual void Update() override;
+  void BeforeUpdate() override;
+  void Update() override;
 
   //BaseClass methods
-  virtual bool MeetsCriterion( const ComponentBase::CriterionType & criterion ) override;
+  bool MeetsCriterion( const ComponentBase::CriterionType & criterion ) override;
 
   //static const char * GetName() { return "ItkTransformDisplacementFilterComponent"; } ;
   static const char * GetDescription() { return "ItkTransformDisplacementFilter Component"; }
@@ -93,6 +94,7 @@ public:
 private:
 
   typename DisplacementFieldFilterType::Pointer m_DisplacementFieldFilter;
+  typename itk::ImageBase<Dimensionality>::Pointer m_ImageDomainFixed;
   typename itkTransformInterface< TInternalComputationValue, Dimensionality >::Pointer m_TransformComponent;
 
 protected:

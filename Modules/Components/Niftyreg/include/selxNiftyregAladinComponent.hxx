@@ -26,6 +26,7 @@ template< class TPixel >
 NiftyregAladinComponent< TPixel >::NiftyregAladinComponent( const std::string & name, LoggerImpl & logger ) : Superclass( name, logger )
 {
   m_reg_aladin = new reg_aladin< TPixel >();
+  m_reg_aladin->SetAlignCentre(true);
 }
 
 
@@ -58,6 +59,19 @@ NiftyregAladinComponent< TPixel >
   this->m_floating_image = component->GetFloatingNiftiImage();
   // connect the itk pipeline
   this->m_reg_aladin->SetInputFloating(this->m_floating_image.get());
+  return 0;
+}
+
+
+template< class TPixel >
+int
+NiftyregAladinComponent< TPixel >
+::Accept(typename NiftyregInputMaskInterface<  unsigned char  >::Pointer component)
+{
+  // store the shared_ptr to the data, otherwise it gets freed
+  this->m_input_mask = component->GetInputMask();
+  // connect the itk pipeline
+  this->m_reg_aladin->SetInputMask( this->m_input_mask.get() );
   return 0;
 }
 
@@ -112,7 +126,7 @@ NiftyregAladinComponent<  TPixel >
     return false;
   } // else: CriterionStatus::Unknown
 
-  else if (criterion.first == "NumberOfIterations" || criterion.first == "maxit" || criterion.first == "MaxIterations") //Supports this?
+  else if (criterion.first == "NumberOfIterations" || criterion.first == "maxit" || criterion.first == "MaximumNumberOfIterations") //Supports this?
   {
     meetsCriteria = true;
     if( criterion.second.size() == 1 )
@@ -144,4 +158,23 @@ NiftyregAladinComponent<  TPixel >
   }
   return meetsCriteria;
 }
+
+template< class TPixel >
+bool
+NiftyregAladinComponent<  TPixel >
+::ConnectionsSatisfied()
+{
+  // This function overrides the default behavior, in which all accepting interfaces must be set, by allowing the itkTransformParametersAdaptorsContainerInterface not being set.
+  // TODO: see I we can reduce the amount of code with helper (meta-)functions
+  if( !this->InterfaceAcceptor< NiftyregReferenceImageInterface< TPixel >>::GetAccepted())
+  {
+    return false;
+  }
+  if( !this->InterfaceAcceptor< NiftyregFloatingImageInterface< TPixel >>::GetAccepted() )
+  {
+    return false;
+  }
+  return true;
+}
+
 } //end namespace selx

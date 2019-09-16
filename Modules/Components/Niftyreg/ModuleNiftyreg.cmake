@@ -32,9 +32,10 @@ if( NOT Niftyreg_FOUND )
   message( FATAL_ERROR "Could not find Niftyreg. Point NIFTYREG_DIR to its install folder." )
 endif()
 
+
 set( ${MODULE}_INCLUDE_DIRS
   ${${MODULE}_SOURCE_DIR}/include
-  ${Niftyreg_INCLUDE_DIR}
+  ${NIFTYREG_DIR}/include
 )
 
 # *NIX OSes use system png and zlib, for Windows OS Niftyreg is configured to build these libraries
@@ -51,6 +52,7 @@ set( ${MODULE}_SOURCE_FILES
 set( ${MODULE}_TEST_SOURCE_FILES
   ${${MODULE}_SOURCE_DIR}/test/selxNiftyregComponentTest.cxx
   ${${MODULE}_SOURCE_DIR}/test/selxNiftiItkConversionsTest.cxx
+  ${${MODULE}_SOURCE_DIR}/test/selxNiftyregDisplacementTest.cxx
 )
 
 set( ${MODULE}_LIBRARIES 

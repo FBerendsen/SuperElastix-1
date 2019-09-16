@@ -1,0 +1,40 @@
+{
+    "Components": [
+        {
+            "Name": "DisplacementFieldImageWarper",
+            "NameOfClass": "ItkDisplacementFieldImageWarperComponent",
+            "Dimensionality": "3",
+            "Interpolator": "NearestNeighbor"
+        },
+        {
+            "Name": "DisplacementField",
+            "NameOfClass": "ItkDisplacementFieldSourceComponent",
+            "Dimensionality": "3"
+        },
+
+        {
+            "Name": "LabelImage",
+            "NameOfClass": "ItkImageSourceComponent",
+            "Dimensionality": "3"
+        },
+        {
+            "Name": "WarpedLabelImage",
+            "NameOfClass": "ItkImageSinkComponent",
+            "Dimensionality": "3"
+        }
+    ],
+	"Connections": [
+        {
+            "Out": "DisplacementField",
+            "In": "DisplacementFieldImageWarper"
+        },
+        {
+            "Out": "LabelImage",
+            "In": "DisplacementFieldImageWarper"
+        },
+        {
+            "Out": "DisplacementFieldImageWarper",
+            "In": "WarpedLabelImage"
+        }
+    ]
+}

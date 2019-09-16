@@ -25,6 +25,8 @@
 #include "itkGradientDescentOptimizerv4.h"
 #include "itkImageFileWriter.h"
 #include "selxCheckTemplateProperties.h"
+#include "selxStringConverter.h"
+
 namespace selx
 {
 template< typename TFilter >
@@ -84,43 +86,43 @@ public:
       std::cout << "   FG Final metric gradient (sample of values): ";
       if( gradient.GetSize() < 16 )
       {
-        std::cout << gradient;
+        std::cout << std::setprecision(6) << gradient;
       }
       else
       {
         for( itk::SizeValueType i = 0; i < gradient.GetSize(); i += ( gradient.GetSize() / 16 ) )
         {
-          std::cout << gradient[ i ] << " ";
+          std::cout << std::setprecision(6) << gradient[ i ] << " ";
         }
       }
       std::cout << std::endl;
     }
+    else if( typeid( event ) == typeid( itk::IterationEvent ) )
+    {
+      typedef itk::GradientDescentOptimizerv4 GradientDescentOptimizerv4Type;
+      auto * optimizerBase = filter->GetOptimizer();
+      typename GradientDescentOptimizerv4Type::ConstPointer optimizer = dynamic_cast< const GradientDescentOptimizerv4Type * >( optimizerBase );
+      if( !optimizer )
+      {
+        itkGenericExceptionMacro( "Error dynamic_cast failed" );
+      }
+      std::cout << "   Iteration #:    " << optimizer->GetCurrentIteration() << std::endl;
+      std::cout << "   LR Final learning rate:    " << optimizer->GetLearningRate() << std::endl;
+      std::cout << "   FM Final metric value:     " << optimizer->GetCurrentMetricValue() << std::endl;
+    }
     else if( !( itk::IterationEvent().CheckEvent( &event ) ) )
     {
       return;
-    }
-    else
-    {
-      // OptimizerPointer optimizer = static_cast< OptimizerPointer >( object );
-      //std::cout << optimizer->GetCurrentIteration() << ": ";
-      //std::cout << optimizer->GetCurrentMetricValue() << std::endl;
-      //std::cout << optimizer->GetInfinityNormOfProjectedGradient() << std::endl;
     }
   }
 };
 
 template< int Dimensionality, class TPixel, class InternalComputationValueType >
 ItkImageRegistrationMethodv4Component< Dimensionality, TPixel,
-InternalComputationValueType >::ItkImageRegistrationMethodv4Component( const std::string & name, LoggerImpl & logger ) : Superclass( name,
-    logger ),
-  m_TransformAdaptorsContainerInterface(
-    nullptr )
+InternalComputationValueType >::ItkImageRegistrationMethodv4Component( const std::string & name, LoggerImpl & logger )
+  : Superclass( name, logger ), m_TransformAdaptorsContainerInterface( nullptr ), m_InvertIntensity(false), m_MetricSamplingPercentage(1.0)
 {
-  m_theItkFilter = TheItkFilterType::New();
-  m_theItkFilter->InPlaceOn();
-
-  //TODO: instantiating the filter in the constructor might be heavy for the use in component selector factory, since all components of the database are created during the selection process.
-  // we could choose to keep the component light weighted (for checking criteria such as names and connections) until the settings are passed to the filter, but this requires an additional initialization step.
+  this->m_ImageRegistrationMethodv4Filter = ImageRegistrationMethodv4Type::New();
 }
 
 
@@ -135,10 +137,7 @@ int
 ItkImageRegistrationMethodv4Component< Dimensionality, TPixel, InternalComputationValueType >
 ::Accept( typename itkImageFixedInterface< Dimensionality, TPixel >::Pointer component )
 {
-  auto fixedImage = component->GetItkImageFixed();
-  // connect the itk pipeline
-  this->m_theItkFilter->SetFixedImage( fixedImage );
-
+  this->m_FixedImage = component->GetItkImageFixed();
   return 0;
 }
 
@@ -148,9 +147,7 @@ int
 ItkImageRegistrationMethodv4Component< Dimensionality, TPixel, InternalComputationValueType >
 ::Accept( typename itkImageMovingInterface< Dimensionality, TPixel >::Pointer component )
 {
-  auto movingImage = component->GetItkImageMoving();
-  // connect the itk pipeline
-  this->m_theItkFilter->SetMovingImage( movingImage );
+  this->m_MovingImage = component->GetItkImageMoving();
   return 0;
 }
 
@@ -161,7 +158,7 @@ ItkImageRegistrationMethodv4Component< Dimensionality, TPixel, InternalComputati
   itkTransformInterface< InternalComputationValueType,
   Dimensionality >::Pointer component )
 {
-  this->m_theItkFilter->SetInitialTransform( component->GetItkTransform() );
+  this->m_Transform = component->GetItkTransform();
   return 0;
 }
 
@@ -171,7 +168,6 @@ int
 ItkImageRegistrationMethodv4Component< Dimensionality, TPixel, InternalComputationValueType >::Accept(
   typename TransformParametersAdaptorsContainerInterfaceType::Pointer component )
 {
-  // store the interface to the ParametersAdaptorsContainer since during the setup of the connections the TransformParametersAdaptorComponent might not be fully connected and thus does not have the adaptors ready.
   this->m_TransformAdaptorsContainerInterface = component;
   return 0;
 }
@@ -185,7 +181,7 @@ ItkImageRegistrationMethodv4Component< Dimensionality, TPixel, InternalComputati
 {
   //TODO: The optimizer must be set explicitly, since this is a work-around for a bug in itkRegistrationMethodv4.
   //TODO: report bug to itk: when setting a metric, the optimizer must be set explicitly as well, since default optimizer setup breaks.
-  this->m_theItkFilter->SetMetric( component->GetItkMetricv4() );
+  this->m_ImageRegistrationMethodv4Filter->SetMetric( component->GetItkMetricv4() );
 
   return 0;
 }
@@ -198,63 +194,114 @@ ItkImageRegistrationMethodv4Component< Dimensionality, TPixel, InternalComputati
 {
   //TODO: The optimizer must be set explicitly, since this is a work-around for a bug in itkRegistrationMethodv4.
   //TODO: report bug to itk: when setting a metric, the optimizer must be set explicitly as well, since default optimizer setup breaks.
-  this->m_theItkFilter->SetOptimizer( component->GetItkOptimizerv4() );
+  this->m_ImageRegistrationMethodv4Filter->SetOptimizer( component->GetItkOptimizerv4() );
 
   return 0;
 }
 
+template< int Dimensionality, class TPixel, class InternalComputationValueType >
+void
+ItkImageRegistrationMethodv4Component< Dimensionality, TPixel, InternalComputationValueType >::BeforeUpdate( void ) {
+  FixedImagePointer fixedImage = this->m_FixedImage;
+  MovingImagePointer movingImage = this->m_MovingImage;
+
+  fixedImage->Update();
+  movingImage->Update();
+
+  if (this->m_RescaleIntensity.size() == 2) {
+    this->m_Logger.Log(LogLevel::INF, "{0}: Rescaling images to [{1}, {2}]", this->m_Name, this->m_RescaleIntensity[0], this->m_RescaleIntensity[1]);
+
+    FixedRescaleImageFilterPointer fixedIntensityRescaler = FixedRescaleImageFilterType::New();
+    fixedIntensityRescaler->SetInput(fixedImage);
+    fixedIntensityRescaler->SetOutputMinimum(std::stof(this->m_RescaleIntensity[0]));
+    fixedIntensityRescaler->SetOutputMaximum(std::stof(this->m_RescaleIntensity[1]));
+    fixedIntensityRescaler->UpdateOutputInformation();
+    fixedImage = fixedIntensityRescaler->GetOutput();
+    fixedImage->Update();
+
+    MovingRescaleImageFilterPointer movingIntensityRescaler = MovingRescaleImageFilterType::New();
+    movingIntensityRescaler->SetInput(movingImage);
+    movingIntensityRescaler->SetOutputMinimum(std::stof(this->m_RescaleIntensity[0]));
+    movingIntensityRescaler->SetOutputMaximum(std::stof(this->m_RescaleIntensity[1]));
+    movingIntensityRescaler->UpdateOutputInformation();
+    movingImage = movingIntensityRescaler->GetOutput();
+    movingImage->Update();
+  }
+
+  if (this->m_InvertIntensity) {
+    this->m_Logger.Log(LogLevel::INF, "{0}, Inverting image scales", this->m_Name);
+
+    FixedImageCalculatorFilterPointer fixedIntensityMaximumCalculator = FixedImageCalculatorFilterType::New();
+    fixedIntensityMaximumCalculator->SetImage(fixedImage);
+    fixedIntensityMaximumCalculator->ComputeMaximum();
+
+    FixedInvertIntensityImageFilterPointer fixedIntensityInverter = FixedInvertIntensityImageFilterType::New();
+    fixedIntensityInverter->SetInput(fixedImage);
+    fixedIntensityInverter->SetMaximum(fixedIntensityMaximumCalculator->GetMaximum());
+    fixedIntensityInverter->UpdateOutputInformation();
+    fixedImage = fixedIntensityInverter->GetOutput();
+    fixedImage->Update();
+
+    MovingImageCalculatorFilterPointer movingIntensityMaximumCalculator = MovingImageCalculatorFilterType::New();
+    movingIntensityMaximumCalculator->SetImage(movingImage);
+    movingIntensityMaximumCalculator->ComputeMaximum();
+
+    MovingInvertIntensityImageFilterPointer movingIntensityInverter = MovingInvertIntensityImageFilterType::New();
+    movingIntensityInverter->SetInput(movingImage);
+    movingIntensityInverter->SetMaximum(movingIntensityMaximumCalculator->GetMaximum());
+    movingIntensityInverter->UpdateOutputInformation();
+    movingImage = movingIntensityInverter->GetOutput();
+    movingImage->Update();
+  }
+
+  this->m_ImageRegistrationMethodv4Filter->SetFixedImage(fixedImage);
+  this->m_ImageRegistrationMethodv4Filter->SetMovingImage(movingImage);
+
+  if(this->m_MetricSamplingPercentage < 1.0) {
+    this->m_ImageRegistrationMethodv4Filter->SetMetricSamplingPercentage(this->m_MetricSamplingPercentage);
+  }
+}
 
 template< int Dimensionality, class TPixel, class InternalComputationValueType >
 void
 ItkImageRegistrationMethodv4Component< Dimensionality, TPixel, InternalComputationValueType >::Update( void )
 {
-  typename FixedImageType::ConstPointer fixedImage   = this->m_theItkFilter->GetFixedImage();
-  typename MovingImageType::ConstPointer movingImage = this->m_theItkFilter->GetMovingImage();
+  // Set transform
+  typedef itk::CompositeTransform<InternalComputationValueType, Dimensionality >  MovingCompositeTransformType;
 
-  // Scale estimator is not used in current implementation yet
+  this->m_ImageRegistrationMethodv4Filter->SetInitialTransform(this->m_Transform);
+
+  // Configure scales estimator
   typename ScalesEstimatorType::Pointer scalesEstimator = ScalesEstimatorType::New();
+  scalesEstimator->SetTransformForward( true );
+  scalesEstimator->SetSmallParameterVariation( 1.0 );
 
-  ImageMetricType * theMetric = dynamic_cast< ImageMetricType * >( this->m_theItkFilter->GetModifiableMetric() );
-
-  //auto optimizer = dynamic_cast< itk::GradientDescentOptimizerv4 * >( this->m_theItkFilter->GetModifiableOptimizer() );
-  auto optimizer = this->m_theItkFilter->GetModifiableOptimizer();
-  //auto optimizer = dynamic_cast<itk::ObjectToObjectOptimizerBaseTemplate< InternalComputationValueType > *>(this->m_theItkFilter->GetModifiableOptimizer());
-
-  auto transform = this->m_theItkFilter->GetModifiableTransform();
-
-  if( theMetric )
+  ImageMetricType * metric = dynamic_cast< ImageMetricType * >( this->m_ImageRegistrationMethodv4Filter->GetModifiableMetric() );
+  if( metric )
   {
-    scalesEstimator->SetMetric( theMetric );
+    scalesEstimator->SetMetric( metric );
   }
   else
   {
     throw std::runtime_error( "Error casting to ImageMetricv4Type failed" );
   }
 
-  //std::cout << "estimated step scale: " << scalesEstimator->EstimateStepScale(1.0);
-  scalesEstimator->SetTransformForward( true );
-  scalesEstimator->SetSmallParameterVariation( 1.0 );
+  auto optimizer = this->m_ImageRegistrationMethodv4Filter->GetModifiableOptimizer();
+  optimizer->SetScalesEstimator(scalesEstimator);
 
-  //optimizer->SetScalesEstimator( ITK_NULLPTR );
-  //optimizer->SetScalesEstimator(scalesEstimator);
-  //optimizer->SetDoEstimateLearningRateOnce( false ); //true by default
-  //optimizer->SetDoEstimateLearningRateAtEachIteration( false );
-
-  //this->m_theItkFilter->SetOptimizer( optimizer );
-
+  // Multi-resolution setup
   if( this->m_TransformAdaptorsContainerInterface != nullptr )
   {
     auto adaptors = this->m_TransformAdaptorsContainerInterface->GetItkTransformParametersAdaptorsContainer();
-    this->m_theItkFilter->SetTransformParametersAdaptorsPerLevel( adaptors
-      );
+    this->m_ImageRegistrationMethodv4Filter->SetTransformParametersAdaptorsPerLevel(adaptors);
   }
 
-  typedef CommandIterationUpdate< TheItkFilterType > RegistrationCommandType;
+  typedef CommandIterationUpdate< ImageRegistrationMethodv4Type > RegistrationCommandType;
   typename RegistrationCommandType::Pointer registrationObserver = RegistrationCommandType::New();
-  this->m_theItkFilter->AddObserver( itk::IterationEvent(), registrationObserver );
+  this->m_ImageRegistrationMethodv4Filter->AddObserver( itk::IterationEvent(), registrationObserver );
 
-  // perform the actual registration
-  this->m_theItkFilter->Update();
+  // Perform the actual registration
+  this->m_ImageRegistrationMethodv4Filter->Update();
 }
 
 
@@ -263,7 +310,7 @@ typename ItkImageRegistrationMethodv4Component< Dimensionality, TPixel, Internal
 ItkImageRegistrationMethodv4Component< Dimensionality, TPixel, InternalComputationValueType >
 ::GetItkTransform()
 {
-  return this->m_theItkFilter->GetModifiableTransform();
+  return this->m_Transform;
 }
 
 
@@ -272,7 +319,7 @@ void
 ItkImageRegistrationMethodv4Component< Dimensionality, TPixel, InternalComputationValueType >
 ::SetFixedInitialTransform( typename CompositeTransformType::Pointer fixedInitialTransform )
 {
-  return this->m_theItkFilter->SetFixedInitialTransform( fixedInitialTransform );
+  return this->m_ImageRegistrationMethodv4Filter->SetFixedInitialTransform( fixedInitialTransform );
 }
 
 
@@ -281,16 +328,7 @@ void
 ItkImageRegistrationMethodv4Component< Dimensionality, TPixel, InternalComputationValueType >
 ::SetMovingInitialTransform( typename CompositeTransformType::Pointer movingInitialTransform )
 {
-  return this->m_theItkFilter->SetMovingInitialTransform( movingInitialTransform );
-}
-
-
-template< int Dimensionality, class TPixel, class InternalComputationValueType >
-const typename std::string
-ItkImageRegistrationMethodv4Component< Dimensionality, TPixel, InternalComputationValueType >
-::GetComponentName()
-{
-  return this->m_Name; //from ComponentBase
+  return this->m_ImageRegistrationMethodv4Filter->SetMovingInitialTransform( movingInitialTransform );
 }
 
 
@@ -299,68 +337,70 @@ bool
 ItkImageRegistrationMethodv4Component< Dimensionality, TPixel, InternalComputationValueType >
 ::MeetsCriterion( const ComponentBase::CriterionType & criterion )
 {
-  bool hasUndefinedCriteria( false );
-  bool meetsCriteria( false );
+  const auto& criterionKey = criterion.first;
+  const auto& criterionValues = criterion.second;
+  const bool hasOneCriterionValue = criterionValues.size() == 1;
 
-  auto status = CheckTemplateProperties( this->TemplateProperties(), criterion );
-  if( status == CriterionStatus::Satisfied )
+  // First check if user-provided properties are template properties and if this component was instantiated with those template properties.
+  switch (CheckTemplateProperties(this->TemplateProperties(), criterion))
   {
-    return true;
+    case CriterionStatus::Satisfied:
+    {
+      return true;
+    }
+    case CriterionStatus::Failed:
+    {
+      return false;
+    }
+    case CriterionStatus::Unknown:
+    {
+      // Just continue.
+    }
   }
-  else if( status == CriterionStatus::Failed )
+
+  // Next else-if blocks check if the name of setting is an existing property for this component, otherwise MeetsCriterion returns CriterionStatus::Failed.
+  if( criterion.first == "NumberOfLevels" ) //Supports this?
   {
-    return false;
-  } // else: CriterionStatus::Unknown
-  else if( criterion.first == "NumberOfLevels" ) //Supports this?
-  {
-    meetsCriteria = true;
-    if( criterion.second.size() == 1 )
+    if( hasOneCriterionValue )
     {
       if( this->m_NumberOfLevelsLastSetBy == "" ) // check if some other settings set the NumberOfLevels
       {
-        // try catch?
-        this->m_theItkFilter->SetNumberOfLevels( std::stoi( criterion.second[ 0 ] ) );
+        this->m_ImageRegistrationMethodv4Filter->SetNumberOfLevels( std::stoi( criterion.second[ 0 ] ) );
         this->m_NumberOfLevelsLastSetBy = criterion.first;
+        return true;
       }
       else
       {
-        if( this->m_theItkFilter->GetNumberOfLevels() != std::stoi( criterion.second[ 0 ] ) )
+        if( this->m_ImageRegistrationMethodv4Filter->GetNumberOfLevels() != std::stoi( criterion.second[ 0 ] ) )
         {
           // TODO log error?
           std::cout << "A conflicting NumberOfLevels was set by " << this->m_NumberOfLevelsLastSetBy << std::endl;
-          meetsCriteria = false;
-          return meetsCriteria;
+          return false;
         }
       }
     }
     else
     {
-      // TODO log error?
-      std::cout << "NumberOfLevels accepts one number only" << std::endl;
-      meetsCriteria = false;
-      return meetsCriteria;
+      return false;
     }
   }
   else if( criterion.first == "ShrinkFactorsPerLevel" ) //Supports this?
   {
-    meetsCriteria = true;
-
     const int impliedNumberOfResolutions = criterion.second.size();
 
     if( this->m_NumberOfLevelsLastSetBy == "" ) // check if some other settings set the NumberOfLevels
     {
-      // try catch?
-      this->m_theItkFilter->SetNumberOfLevels( impliedNumberOfResolutions );
+      this->m_ImageRegistrationMethodv4Filter->SetNumberOfLevels( impliedNumberOfResolutions );
       this->m_NumberOfLevelsLastSetBy = criterion.first;
+      return true;
     }
     else
     {
-      if( this->m_theItkFilter->GetNumberOfLevels() != impliedNumberOfResolutions )
+      if( this->m_ImageRegistrationMethodv4Filter->GetNumberOfLevels() != impliedNumberOfResolutions )
       {
         // TODO log error?
         std::cout << "A conflicting NumberOfLevels was set by " << this->m_NumberOfLevelsLastSetBy << std::endl;
-        meetsCriteria = false;
-        return meetsCriteria;
+        return false;
       }
     }
 
@@ -374,28 +414,25 @@ ItkImageRegistrationMethodv4Component< Dimensionality, TPixel, InternalComputati
       ++resolutionIndex;
     }
     // try catch?
-    this->m_theItkFilter->SetShrinkFactorsPerLevel( shrinkFactorsPerLevel );
+    this->m_ImageRegistrationMethodv4Filter->SetShrinkFactorsPerLevel( shrinkFactorsPerLevel );
+    return true;
   }
   else if( criterion.first == "SmoothingSigmasPerLevel" ) //Supports this?
   {
-    meetsCriteria = true;
-
     const int impliedNumberOfResolutions = criterion.second.size();
 
     if( this->m_NumberOfLevelsLastSetBy == "" ) // check if some other settings set the NumberOfLevels
     {
-      // try catch?
-      this->m_theItkFilter->SetNumberOfLevels( impliedNumberOfResolutions );
+      this->m_ImageRegistrationMethodv4Filter->SetNumberOfLevels( impliedNumberOfResolutions );
       this->m_NumberOfLevelsLastSetBy = criterion.first;
+      return true;
     }
     else
     {
-      if( this->m_theItkFilter->GetNumberOfLevels() != impliedNumberOfResolutions )
+      if( this->m_ImageRegistrationMethodv4Filter->GetNumberOfLevels() != impliedNumberOfResolutions )
       {
-        // TODO log error?
-        std::cout << "A conflicting NumberOfLevels was set by " << this->m_NumberOfLevelsLastSetBy << std::endl;
-        meetsCriteria = false;
-        return meetsCriteria;
+        this->m_Logger.Log(LogLevel::ERR, "A conflicting NumberOfLevels was set by {0}.", this->m_NumberOfLevelsLastSetBy);
+        return false;
       }
     }
 
@@ -404,18 +441,57 @@ ItkImageRegistrationMethodv4Component< Dimensionality, TPixel, InternalComputati
     smoothingSigmasPerLevel.SetSize( impliedNumberOfResolutions );
 
     unsigned int resolutionIndex = 0;
-    for( auto const & criterionValue : criterion.second ) // auto&& preferred?
+    for( const auto& criterionValue : criterion.second )
     {
       smoothingSigmasPerLevel[ resolutionIndex ] = std::stoi( criterionValue );
       ++resolutionIndex;
     }
-    // try catch?
-    // Smooth by specified gaussian sigmas for each level.  These values are specified in
-    // physical units.
-    this->m_theItkFilter->SetSmoothingSigmasPerLevel( smoothingSigmasPerLevel );
+    this->m_ImageRegistrationMethodv4Filter->SetSmoothingSigmasPerLevel( smoothingSigmasPerLevel );
+    return true;
+  } else if( criterion.first == "RescaleIntensity" ) {
+    if( criterion.second.size() == 2 ) {
+      this->m_RescaleIntensity = criterion.second;
+      return true;
+    }
+    else {
+      this->m_Logger.Log(LogLevel::ERR, "Expected two values for RescaleIntensity (min, max), got {0}.", criterion.second.size());
+      return false;
+    }
+  } else if( criterion.first == "InvertIntensity" ) {
+    if( hasOneCriterionValue ) {
+      bool ok = StringConverter::Convert(criterion.second[0], this->m_InvertIntensity);
+      if (ok) {
+        return true;
+      } else {
+        this->m_Logger.Log(LogLevel::ERR, "Expected InvertIntensity to be True or False, got {0}.", criterion.second[0]);
+      }
+    } else {
+      this->m_Logger.Log(LogLevel::ERR, "Expected one value for InvertIntensity (True or False), got {0}.", criterion.second.size());
+    }
+  } else if( criterion.first == "MetricSamplingPercentage" ) {
+    if( hasOneCriterionValue ) {
+      this->m_MetricSamplingPercentage = std::stof(criterion.second[0]);
+      return true;
+    } else {
+      this->m_Logger.Log(LogLevel::ERR, "Expected one value for MetricSamplingPercetage, got {0}.", criterion.second.size());
+    }
+  } else if( criterion.first == "MetricSamplingStrategy" ) {
+    if( hasOneCriterionValue ) {
+      if( criterion.second[0] == "Regular" ) {
+        this->m_ImageRegistrationMethodv4Filter->SetMetricSamplingStrategy(ImageRegistrationMethodv4Type::MetricSamplingStrategyType::REGULAR);
+        return true;
+      } else if( criterion.second[0] == "Random" ) {
+        this->m_ImageRegistrationMethodv4Filter->SetMetricSamplingStrategy(ImageRegistrationMethodv4Type::MetricSamplingStrategyType::RANDOM);
+        return true;
+      } else {
+        this->m_Logger.Log(LogLevel::ERR, "Expected MetricSamplingStrategy to be Regular or Random, got {0}.", criterion.second[0]);
+      }
+    } else {
+      this->m_Logger.Log(LogLevel::ERR, "Expected one value for MetricSamplingStrategy (Regular or Random), got {0}.", criterion.second.size());
+    }
   }
 
-  return meetsCriteria;
+  return false;
 }
 
 

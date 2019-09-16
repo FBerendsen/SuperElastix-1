@@ -34,12 +34,14 @@ template< int Dimensionality, class TPixel >
 class ItkImageSourceComponent :
   public SuperElastixComponent<
   Accepting< >,
-  Providing< SourceInterface, itkImageInterface< Dimensionality, TPixel >,
-  itkImageFixedInterface< Dimensionality, TPixel >,
-  itkImageMovingInterface< Dimensionality, TPixel >,
-  itkImageDomainFixedInterface< Dimensionality >,
-  itkImageMovingMaskInterface< Dimensionality, TPixel >,
-  itkImageFixedMaskInterface< Dimensionality, TPixel >>
+  Providing< SourceInterface,
+    itkImageInterface< Dimensionality, TPixel >,
+    itkImageMaskInterface< Dimensionality, TPixel >,
+    itkImageFixedInterface< Dimensionality, TPixel >,
+    itkImageMovingInterface< Dimensionality, TPixel >,
+    itkImageDomainFixedInterface< Dimensionality >,
+    itkImageMovingMaskInterface< Dimensionality, TPixel >,
+    itkImageFixedMaskInterface< Dimensionality, TPixel >>
   >
 {
 public:
@@ -50,12 +52,14 @@ public:
     >                                       Self;
   typedef SuperElastixComponent<
     Accepting< >,
-    Providing< SourceInterface, itkImageInterface< Dimensionality, TPixel >,
-    itkImageFixedInterface< Dimensionality, TPixel >,
-    itkImageMovingInterface< Dimensionality, TPixel >,
-    itkImageDomainFixedInterface< Dimensionality >,
-    itkImageMovingMaskInterface< Dimensionality, TPixel >,
-    itkImageFixedMaskInterface< Dimensionality, TPixel >>
+    Providing< SourceInterface,
+      itkImageInterface< Dimensionality, TPixel >,
+      itkImageMaskInterface< Dimensionality, TPixel >,
+      itkImageFixedInterface< Dimensionality, TPixel >,
+      itkImageMovingInterface< Dimensionality, TPixel >,
+      itkImageDomainFixedInterface< Dimensionality >,
+      itkImageMovingMaskInterface< Dimensionality, TPixel >,
+      itkImageFixedMaskInterface< Dimensionality, TPixel >>
     >                                       Superclass;
   typedef std::shared_ptr< Self >       Pointer;
   typedef std::shared_ptr< const Self > ConstPointer;
@@ -70,22 +74,18 @@ public:
   typedef FileReaderDecorator< ItkImageReaderType >     DecoratedReaderType;
 
   // providing interfaces
-  virtual typename ItkImageType::Pointer GetItkImage() override;
+  typename ItkImageType::Pointer GetItkImage() override;
+  typename ItkImageType::Pointer GetItkImageFixed() override;
+  typename ItkImageType::Pointer GetItkImageMoving() override;
+  typename ItkImageDomainType::Pointer GetItkImageDomainFixed() override;
+  typename ItkImageType::Pointer GetItkImageMask() override;
+  typename ItkImageType::Pointer GetItkImageFixedMask() override;
+  typename ItkImageType::Pointer GetItkImageMovingMask() override;
 
-  virtual typename ItkImageType::Pointer GetItkImageFixed() override;
+  void SetMiniPipelineInput( itk::DataObject::Pointer ) override;
+  AnyFileReader::Pointer GetInputFileReader( void ) override;
 
-  virtual typename ItkImageType::Pointer GetItkImageMoving() override;
-
-  virtual typename ItkImageDomainType::Pointer GetItkImageDomainFixed() override;
-
-  virtual typename ItkImageType::Pointer GetItkImageFixedMask() override;
-
-  virtual typename ItkImageType::Pointer GetItkImageMovingMask() override;
-
-  virtual void SetMiniPipelineInput( itk::DataObject::Pointer ) override;
-  virtual AnyFileReader::Pointer GetInputFileReader( void ) override;
-
-  virtual bool MeetsCriterion( const ComponentBase::CriterionType & criterion ) override;
+  bool MeetsCriterion( const ComponentBase::CriterionType & criterion ) override;
 
   static const char * GetDescription() { return "ItkImageSource Component"; }
 

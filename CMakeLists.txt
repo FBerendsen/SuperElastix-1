@@ -77,6 +77,17 @@ if( ${CMAKE_CXX_COMPILER_ID} STREQUAL MSVC )
       "Please move the build directory to a directory with a shorter path."
     )
   endif()
+  
+  # Avoid many warnings, originating mainly from NiftyReg
+  add_definitions(-D_CRT_SECURE_NO_WARNINGS)
+  # Avoid many warnings, originating mainly from GoogleTest
+  add_definitions(-D_SILENCE_TR1_NAMESPACE_DEPRECATION_WARNING)
+  
+
+  if( ${CMAKE_CONFIGURATION_TYPES} STREQUAL "Debug" )
+    # For a Visual C++ Debug build, use 64-bit toolset, to avoid link errors.
+    set(CMAKE_GENERATOR_TOOLSET "host=x64" CACHE STRING "SuperElastix Visual C++ Debug uses 64-bit toolset" FORCE)
+  endif()
 
   # Explicitly add INCREMENTAL linking option to command lines.
   # http://www.cmake.org/pipermail/cmake/2010-February/035174.html
@@ -125,7 +136,7 @@ include_directories( ${Boost_INCLUDE_DIRS} )
 # ---------------------------------------------------------------------
 # SuperElastix configuration 
 
-option( BUILD_APPLICATIONS "Build applications." OFF )
+option( BUILD_APPLICATIONS "Build applications." ON )
 
 mark_as_advanced( BUILD_SHARED_LIBS )
 option( BUILD_SHARED_LIBS "Build shared libraries." OFF )
@@ -141,7 +152,30 @@ _selxmodules_initialize()
 enable_modules()
 message( STATUS "Enabling modules ... Done" )
 
+# Originally based on the answer by Naszta at
+# https://stackoverflow.com/questions/6526451/how-to-include-git-commit-number-into-a-c-executable
+find_package(Git)
+if(GIT_FOUND)
+  execute_process(
+    COMMAND ${GIT_EXECUTABLE} rev-parse HEAD
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+    OUTPUT_VARIABLE SELX_GIT_REVISION_SHA
+    ERROR_QUIET
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+  else()
+    set(SELX_GIT_REVISION_SHA 0)
+endif()
+
+configure_file(${CMAKE_CURRENT_SOURCE_DIR}/Modules/Core/selxGitRevisionSha.h.in ${CMAKE_CURRENT_BINARY_DIR}/ModuleCore/selxGitRevisionSha.h @ONLY)
+
 include( ${ModuleFilter_SOURCE_DIR}/CompiledLibraryComponents.cmake )
+mark_as_advanced( COMPILED_LIBRARY_CONFIG_DIR )
+set( COMPILED_LIBRARY_CONFIG_DIR ${PROJECT_BINARY_DIR} CACHE PATH "Path where a custom selxCompiledLibraryComponents.h can be found. Defaults to automatic generated file in ${PROJECT_BINARY_DIR}")
+include_directories(${COMPILED_LIBRARY_CONFIG_DIR})
+list( APPEND SUPERELASTIX_INCLUDE_DIRS ${COMPILED_LIBRARY_CONFIG_DIR} )
+    
+option( BUILD_UNIT_TESTS "Also build tests that take a long time to run." ON )
+
 
 # Build applications
 if( ${BUILD_APPLICATIONS} )
@@ -153,16 +187,6 @@ if( ${BUILD_APPLICATIONS} )
 endif()
 
 # TODO: Functionality to disable default modules/applications
-
-# ---------------------------------------------------------------------
-# SuperBench
-
-option( BUILD_SUPERBENCH "Build SuperBench continuous challenge framework." OFF )
-mark_as_advanced( BUILD_SUPERBENCH )
-
-if( BUILD_SUPERBENCH )
-  add_subdirectory( SuperBench )
-endif()
 
 # ---------------------------------------------------------------------
 # Testing

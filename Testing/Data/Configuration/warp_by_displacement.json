@@ -1,0 +1,35 @@
+{
+    "Components": [
+        {
+            "Name": "DisplacementFieldImageWarper",
+            "NameOfClass": "ItkDisplacementFieldImageWarperComponent",
+            "Interpolator": "NearestNeighbor"
+        },
+        {
+            "Name": "DisplacementField",
+            "NameOfClass": "ItkDisplacementFieldSourceComponent"
+        },
+        {
+            "Name": "MovingImage",
+            "NameOfClass": "ItkImageSourceComponent"
+        },
+        {
+            "Name": "WarpedImage",
+            "NameOfClass": "ItkImageSinkComponent"
+        }
+    ],
+    "Connections": [
+        {
+            "Out": "DisplacementField",
+            "In": "DisplacementFieldImageWarper"
+        },
+        {
+            "Out": "MovingImage",
+            "In": "DisplacementFieldImageWarper"
+        },
+        {
+            "Out": "DisplacementFieldImageWarper",
+            "In": "WarpedImage"
+        }
+    ]
+}

@@ -41,6 +41,11 @@ if(CMAKE_CONFIGURATION_TYPES)
   set_property(CACHE CMAKE_CONFIGURATION_TYPES PROPERTY STRINGS Debug Release MinSizeRel RelWithDebInfo)
   
   message(STATUS "Selected configuration type (CMAKE_CONFIGURATION_TYPES): " ${CMAKE_CONFIGURATION_TYPES})
+
+  if( ${CMAKE_CONFIGURATION_TYPES} STREQUAL "Debug" )
+    # For a Visual C++ Debug build, use 64-bit toolset, to avoid link errors.
+    set(CMAKE_GENERATOR_TOOLSET "host=x64" CACHE STRING "SuperElastix SuperBuild Visual C++ Debug uses 64-bit toolset" FORCE)
+  endif()
 endif()
 
 set( SUPERELASTIXSUPERBUILD_MAJOR_VERSION 1)
@@ -114,14 +119,17 @@ endif()
 # Build ITK
 
 set( ITK_VERSION_MAJOR "4" )
-set( ITK_VERSION_MINOR "12" )
-set( ITK_VERSION_PATCH "2" )
+set( ITK_VERSION_MINOR "13" )
+set( ITK_VERSION_PATCH "0" )
 set( ITK_VERSION_STRING "${ITK_VERSION_MAJOR}.${ITK_VERSION_MINOR}.${ITK_VERSION_PATCH}" )
 
 mark_as_advanced( USE_SYSTEM_ITK )
 option( USE_SYSTEM_ITK "Use an installed version of ITK" OFF )
 
 if( USE_SYSTEM_ITK )
+  if( ITK_DIR)
+    message(STATUS "Trying to find ITK in ITK_DIR ${ITK_DIR}.")
+  endif()
   find_package( ITK ${ITK_VERSION_MAJOR}.${ITK_VERSION_MINOR} REQUIRED )
   include( ${ITK_USE_FILE} )
 else()
@@ -131,15 +139,18 @@ endif()
 # ---------------------------------------------------------------------
 # Build Elastix
 
-mark_as_advanced( SUPERELASTIX_BUILD_ELASTIX )
-option( SUPERELASTIX_BUILD_ELASTIX "Build elastix." ON )
+mark_as_advanced( SUPERELASTIX_USE_ELASTIX )
+option( SUPERELASTIX_USE_ELASTIX "Let SuperElastix use Components based on elastix." ON )
 
-if( SUPERELASTIX_BUILD_ELASTIX )
+if( SUPERELASTIX_USE_ELASTIX )
   option( USE_SYSTEM_ELASTIX "Use system install of elastix." OFF )
   mark_as_advanced( USE_SYSTEM_ELASTIX )
 
   if( USE_SYSTEM_ELASTIX )
-    find_package( Elastix )
+    if( ELASTIX_DIR )
+      message(STATUS "Trying to find elastix in ELASTIX_DIR ${ELASTIX_DIR}.")
+    endif()
+    find_package( Elastix REQUIRED )
     include( ${ELASTIX_USE_FILE} )
   else()
     include( ExternalElastix )
@@ -149,14 +160,14 @@ endif()
 # ---------------------------------------------------------------------
 # Build Niftyreg
 
-mark_as_advanced( SUPERELASTIX_BUILD_NIFTYREG )
-option( SUPERELASTIX_BUILD_NIFTYREG "Build support for Niftyreg." ON )
+mark_as_advanced( SUPERELASTIX_USE_NIFTYREG )
+option( SUPERELASTIX_USE_NIFTYREG "Let SuperElastix use Components based on Niftyreg." ON )
 
-if( SUPERELASTIX_BUILD_NIFTYREG )
+if( SUPERELASTIX_USE_NIFTYREG )
   mark_as_advanced( USE_SYSTEM_NIFTYREG )
   option( USE_SYSTEM_NIFTYREG "Use an installed version of Niftyreg." OFF )
   if( USE_SYSTEM_NIFTYREG )
-  set( NIFTYREG_DIR "NOT_FOUND" CACHE PATH "Absolute path to NiftyReg install directory." )
+    set( NIFTYREG_DIR "NOT_FOUND" CACHE PATH "Absolute path to NiftyReg install directory." )
   else()
     include( ExternalNiftyreg )
   endif()
@@ -174,24 +185,12 @@ else()
 endif()
 
 # ---------------------------------------------------------------------
-# Build GoogleTest
-
-mark_as_advanced( USE_SYSTEM_GTEST )
-option( USE_SYSTEM_GTEST "Use a pre-compiled version of GoogleTest. " OFF )
-
-if ( USE_SYSTEM_GTEST )
-  find_package( GTest REQUIRED ) 
-else() 
-  include( ExternalGoogleTest ) 
-endif()
-
-# ---------------------------------------------------------------------
 # Build ATen
 
-mark_as_advanced( SUPERELASTIX_BUILD_ATEN )
-option( SUPERELASTIX_BUILD_ATEN "Build ATen." OFF )
+mark_as_advanced( SUPERELASTIX_USE_ATEN )
+option( SUPERELASTIX_USE_ATEN "Let SuperElastix use Components based on ATen." OFF )
 
-if( SUPERELASTIX_BUILD_ATEN )
+if( SUPERELASTIX_USE_ATEN )
   mark_as_advanced( USE_SYSTEM_ATEN )
   option( USE_SYSTEM_ATEN "Use a pre-compiled version of ATen." OFF )
 

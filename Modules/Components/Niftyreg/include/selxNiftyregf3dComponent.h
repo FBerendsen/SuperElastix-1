@@ -33,7 +33,8 @@ namespace selx
 template< class TPixel >
 class Niftyregf3dComponent :
   public SuperElastixComponent<
-  Accepting< NiftyregReferenceImageInterface< TPixel >, NiftyregFloatingImageInterface< TPixel >, NiftyregAffineMatrixInterface< TPixel >>,
+  Accepting< NiftyregReferenceImageInterface< TPixel >, NiftyregFloatingImageInterface< TPixel >, NiftyregAffineMatrixInterface, NiftyregControlPointPositionImageInterface< TPixel >,
+             NiftyregInputMaskInterface<  unsigned char  > >,
   Providing< NiftyregWarpedImageInterface< TPixel >, NiftyregControlPointPositionImageInterface< TPixel >, UpdateInterface >
   >
 {
@@ -42,36 +43,27 @@ public:
   /** Standard ITK typedefs. */
   typedef Niftyregf3dComponent< TPixel > Self;
   typedef SuperElastixComponent<
-    Accepting< NiftyregReferenceImageInterface< TPixel >, NiftyregFloatingImageInterface< TPixel >, NiftyregAffineMatrixInterface< TPixel >>,
+    Accepting< NiftyregReferenceImageInterface< TPixel >, NiftyregFloatingImageInterface< TPixel >, NiftyregAffineMatrixInterface, NiftyregControlPointPositionImageInterface< TPixel >,
+               NiftyregInputMaskInterface<  unsigned char  > >,
     Providing< NiftyregWarpedImageInterface< TPixel >, NiftyregControlPointPositionImageInterface< TPixel >, UpdateInterface >
     >                                      Superclass;
   typedef std::shared_ptr< Self >       Pointer;
   typedef std::shared_ptr< const Self > ConstPointer;
 
   Niftyregf3dComponent( const std::string & name, LoggerImpl & logger );
-  virtual ~Niftyregf3dComponent();
+  ~Niftyregf3dComponent();
 
-  // Accepting NiftyregReferenceImageInterface
-  virtual int Accept( typename NiftyregReferenceImageInterface< TPixel >::Pointer ) override;
+  int Accept( typename NiftyregReferenceImageInterface< TPixel >::Pointer ) override;
+  int Accept( typename NiftyregFloatingImageInterface< TPixel >::Pointer ) override;
+  int Accept( typename NiftyregAffineMatrixInterface::Pointer ) override;
+  int Accept( typename NiftyregControlPointPositionImageInterface< TPixel >::Pointer ) override;
+  int Accept( typename NiftyregInputMaskInterface< unsigned char >::Pointer ) override;
+  std::shared_ptr< nifti_image > GetWarpedNiftiImage() override;
+  std::shared_ptr< nifti_image > GetControlPointPositionImage() override;
+  void Update() override;
 
-  // Accepting NiftyregFloatingImageInterface
-  virtual int Accept( typename NiftyregFloatingImageInterface< TPixel >::Pointer ) override;
-
-  // Accepting NiftyregAffineMatrixInterface
-  virtual int Accept( typename NiftyregAffineMatrixInterface< TPixel >::Pointer ) override;
-
-  // Providing NiftyregWarpedImageInterface
-  virtual std::shared_ptr< nifti_image > GetWarpedNiftiImage() override;
-
-  // Providing NiftyregControlPointPositionImageInterface
-  virtual std::shared_ptr< nifti_image > GetControlPointPositionImage() override;
-
-  // Providing UpdateInterface
-  virtual void Update() override;
-
-  virtual bool MeetsCriterion( const ComponentBase::CriterionType & criterion ) override;
-
-  virtual bool ConnectionsSatisfied() override;
+  bool MeetsCriterion( const ComponentBase::CriterionType & criterion ) override;
+  bool ConnectionsSatisfied() override;
 
   static const char * GetDescription() { return "Niftyregf3d Component"; }
 
@@ -80,10 +72,11 @@ private:
   reg_f3d< TPixel > *            m_reg_f3d;
   std::shared_ptr< nifti_image > m_reference_image;
   std::shared_ptr< nifti_image > m_floating_image;
+  std::shared_ptr< nifti_image > m_input_mask;
   // m_warped_images is an array of 2 nifti images. Depending on the use case, typically only [0] is a valid image
   std::unique_ptr< std::array< std::shared_ptr< nifti_image >, 2 >> m_warped_images;
   std::shared_ptr< nifti_image > m_cpp_image;
-  typename NiftyregAffineMatrixInterface< TPixel>::Pointer m_NiftyregAffineMatrixInterface;
+  typename NiftyregAffineMatrixInterface::Pointer m_NiftyregAffineMatrixInterface;
 
 protected:
 
@@ -93,6 +86,7 @@ protected:
     return { { keys::NameOfClass, "Niftyregf3dComponent" }, { keys::PixelType, PodString< TPixel >::Get() } };
   }
 };
+
 } //end namespace selx
 #ifndef ITK_MANUAL_INSTANTIATION
 #include "selxNiftyregf3dComponent.hxx"

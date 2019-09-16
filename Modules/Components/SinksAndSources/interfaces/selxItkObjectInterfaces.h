@@ -41,6 +41,20 @@ public:
   virtual typename ItkImageType::Pointer GetItkImage() = 0;
 };
 
+template< int Dimensionality >
+class itkImageDomainInterface
+{
+  // An interface that provides the smart pointer to the base class of an itk image
+  // that holds the origin/spacing/ etc domain information.
+
+public:
+
+  using Type    = itkImageDomainInterface< Dimensionality >;
+  using Pointer = std::shared_ptr< Type >;
+  typedef typename itk::ImageBase< Dimensionality > ItkImageDomainType;
+  virtual typename ItkImageDomainType::Pointer GetItkImageDomain() = 0;
+};
+
 template< int Dimensionality, class TPixel >
 class itkVectorImageInterface
 {
@@ -62,6 +76,19 @@ class itkDisplacementFieldInterface
 public:
 
   using Type    = itkDisplacementFieldInterface< Dimensionality, TPixel >;
+  using Pointer = std::shared_ptr< Type >;
+  typedef itk::Image<itk::Vector< TPixel, Dimensionality >, Dimensionality> ItkDisplacementFieldType;
+  virtual typename ItkDisplacementFieldType::Pointer GetItkDisplacementField() = 0;
+};
+
+template< int Dimensionality, class TPixel >
+class itkWarpingDisplacementFieldInterface
+{
+  // An interface that provides the pointer of an output vector image
+
+public:
+
+  using Type    = itkWarpingDisplacementFieldInterface< Dimensionality, TPixel >;
   using Pointer = std::shared_ptr< Type >;
   typedef itk::Image<itk::Vector< TPixel, Dimensionality >, Dimensionality> ItkDisplacementFieldType;
   virtual typename ItkDisplacementFieldType::Pointer GetItkDisplacementField() = 0;
@@ -134,16 +161,16 @@ public:
 };
 
 template< int Dimensionality, class TPixel >
-class DisplacementFieldItkImageSourceInterface
+class itkImageMaskInterface
 {
-  // An interface that passes the pointer of an output image
+  // An interface that provides the smart pointer to an itk image
 
 public:
 
-  using Type    = DisplacementFieldItkImageSourceInterface< Dimensionality, TPixel >;
+  using Type = itkImageMaskInterface< Dimensionality, TPixel >;
   using Pointer = std::shared_ptr< Type >;
-  typedef typename itk::Image< itk::Vector< TPixel, Dimensionality >, Dimensionality > ItkImageType;
-  virtual typename ItkImageType::Pointer GetDisplacementFieldItkImage() = 0;
+  typedef typename itk::Image< TPixel, Dimensionality > ItkImageType;
+  virtual typename ItkImageType::Pointer GetItkImageMask() = 0;
 };
 
 template< int Dimensionality, class TPixel >
@@ -159,7 +186,6 @@ public:
   virtual typename ItkMeshType::Pointer GetItkMesh() = 0;
 };
 
-// InterfaceName<T>::Get() should return "itkImageSourceInterface" no matter over which arguments itkImageSourceInterface is templated
 template< int D, class TPixel >
 struct Properties< itkImageInterface< D, TPixel >>
 {
@@ -176,6 +202,15 @@ static const std::map< std::string, std::string > Get()
 {
   return { { keys::NameOfInterface, "itkDisplacementFieldInterface" }, { keys::Dimensionality, std::to_string( D ) }, { keys::PixelType, PodString< TPixel >::Get() } };
 }
+};
+
+template< int D, class TPixel >
+struct Properties< itkWarpingDisplacementFieldInterface< D, TPixel >>
+{
+  static const std::map< std::string, std::string > Get()
+  {
+    return { { keys::NameOfInterface, "itkWarpingDisplacementFieldInterface" }, { keys::Dimensionality, std::to_string( D ) }, { keys::PixelType, PodString< TPixel >::Get() } };
+  }
 };
 
 template< int D, class TPixel >
@@ -205,12 +240,22 @@ struct Properties< itkImageMovingInterface< D, TPixel >>
   }
 };
 
+template< int D >
+struct Properties< itkImageDomainInterface< D >>
+{
+  static const std::map< std::string, std::string > Get()
+  {
+    return { { keys::NameOfInterface, "itkImageDomainInterface" }, { keys::Dimensionality, std::to_string( D ) } };
+  }
+};
+
 template< int D, class TPixel >
+
 struct Properties< itkImageFixedMaskInterface< D, TPixel >>
 {
   static const std::map< std::string, std::string > Get()
   {
-    return{ { keys::NameOfInterface, "itkImageFixedMaskInterface" }, { keys::Dimensionality, std::to_string(D) }, { keys::PixelType, PodString< TPixel >::Get() } };
+    return { { keys::NameOfInterface, "itkImageFixedMaskInterface" }, { keys::Dimensionality, std::to_string( D ) }, { keys::PixelType, PodString< TPixel >::Get() }, { "Role", "FixedMask" } };// TODO replace "Role" by "Domain"
   }
 };
 
@@ -219,16 +264,16 @@ struct Properties< itkImageMovingMaskInterface< D, TPixel >>
 {
   static const std::map< std::string, std::string > Get()
   {
-    return{ { keys::NameOfInterface, "itkImageMovingMaskInterface" }, { keys::Dimensionality, std::to_string(D) }, { keys::PixelType, PodString< TPixel >::Get() } };
+    return { { keys::NameOfInterface, "itkImageMovingMaskInterface" }, { keys::Dimensionality, std::to_string( D ) }, { keys::PixelType, PodString< TPixel >::Get() }, { "Role", "MovingMask" } };// TODO replace "Role" by "Domain"
   }
 };
 
 template< int D, class TPixel >
-struct Properties< DisplacementFieldItkImageSourceInterface< D, TPixel >>
+struct Properties< itkImageMaskInterface< D, TPixel >>
 {
   static const std::map< std::string, std::string > Get()
   {
-    return { { keys::NameOfInterface, "DisplacementFieldItkImageSourceInterface" }, { keys::Dimensionality, std::to_string( D ) }, { keys::PixelType, PodString< TPixel >::Get() } };
+    return { { keys::NameOfInterface, "itkImageMaskInterface" }, { keys::Dimensionality, std::to_string( D ) }, { keys::PixelType, PodString< TPixel >::Get() }, { "Role", "Mask" } };// TODO replace "Role" by "Domain"
   }
 };
 

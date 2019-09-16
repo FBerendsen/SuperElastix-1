@@ -17,11 +17,26 @@
  *
  *=========================================================================*/
 
+
+#ifdef _MSC_VER
+#  if _MSC_VER == 1916 // Visual Studio 2017 version 15.9
+#    ifdef _PREFAST_ // Defined as 1 when the /analyze compiler option is set.
+// Warning C26489 often appears as a false positive:
+// https://developercommunity.visualstudio.com/content/problem/469978/c-code-analysis-false-positives-c26489-on-stdmap.html
+#pragma warning(disable: 26489) // Don't dereference a pointer that may be invalid: '...' may have been invalidated at line ... (lifetime.1).
+#    endif
+#  endif
+#endif
+
+
 #include "selxBlueprintImpl.h"
 #include "selxLoggerImpl.h"
-#include <ostream>
 
+// Standard C++ Library headers:
+#include <ostream>
 #include <stdexcept>
+#include <tuple>  // For std::tie.
+
 
 namespace selx
 {
@@ -148,7 +163,7 @@ BlueprintImpl
 
 BlueprintImpl::ComponentNamesType
 BlueprintImpl
-::GetComponentNames( void ) const
+::GetComponentNames() const
 {
   ComponentNamesType container;
   for( auto it = boost::vertices( this->m_Graph.graph() ).first; it != boost::vertices( this->m_Graph.graph() ).second; ++it )
@@ -165,7 +180,7 @@ BlueprintImpl
 {
   if( !this->ComponentExists( upstream ) || !this->ComponentExists( downstream ) )
   {
-    this->m_LoggerImpl->Log(LogLevel::WRN, "Setting a connection between components '{}' and '{}' failed: one or more components do not exist");
+    this->m_LoggerImpl->Log(LogLevel::WRN, "Setting a connection between components '{}' and '{}' failed: one or more components do not exist", upstream, downstream);
     return false;
   }
 
@@ -173,7 +188,7 @@ BlueprintImpl
     
   boost::graph_traits<GraphType>::out_edge_iterator ei, ei_end;
   // too bad edge_range_by_label doesn't exist
-  boost::tie(ei, ei_end) = boost::edge_range(this->m_Graph.vertex(upstream), this->m_Graph.vertex(downstream), this->m_Graph.graph());
+  std::tie(ei, ei_end) = boost::edge_range(this->m_Graph.vertex(upstream), this->m_Graph.vertex(downstream), this->m_Graph.graph());
 
   for (; ei != ei_end; ++ei) 
   {
@@ -199,7 +214,7 @@ BlueprintImpl
 
   boost::graph_traits<GraphType>::out_edge_iterator ei, ei_end;
   // too bad edge_range_by_label doesn't exist
-  boost::tie(ei, ei_end) = boost::edge_range(this->m_Graph.vertex(upstream), this->m_Graph.vertex(downstream), this->m_Graph.graph());
+  std::tie(ei, ei_end) = boost::edge_range(this->m_Graph.vertex(upstream), this->m_Graph.vertex(downstream), this->m_Graph.graph());
 
   for (; ei != ei_end; ++ei)
   {
@@ -211,8 +226,6 @@ BlueprintImpl
   } // no existing connections named "name" were found.
   
   throw std::runtime_error( "BlueprintImpl does not contain connection from component " + upstream + " to " + downstream + " by name " + name );
-  // assert(false);
-  return ParameterMapType();
 } 
 
 bool
@@ -223,7 +236,7 @@ BlueprintImpl
   {
     boost::graph_traits<GraphType>::out_edge_iterator ei, ei_end;
     // too bad edge_range_by_label doesn't exist
-    boost::tie(ei, ei_end) = boost::edge_range(this->m_Graph.vertex(upstream), this->m_Graph.vertex(downstream), this->m_Graph.graph());
+    std::tie(ei, ei_end) = boost::edge_range(this->m_Graph.vertex(upstream), this->m_Graph.vertex(downstream), this->m_Graph.graph());
     for (; ei != ei_end; ++ei) {
       auto existingName = boost::get(&ConnectionPropertyType::name, this->m_Graph.graph(), *ei);
       if (name == existingName)
@@ -263,7 +276,7 @@ BlueprintImpl
   {
     boost::graph_traits<GraphType>::out_edge_iterator ei, ei_end;
     // too bad edge_range_by_label doesn't exist
-    boost::tie(ei, ei_end) = boost::edge_range(this->m_Graph.vertex(upstream), this->m_Graph.vertex(downstream), this->m_Graph.graph());
+    std::tie(ei, ei_end) = boost::edge_range(this->m_Graph.vertex(upstream), this->m_Graph.vertex(downstream), this->m_Graph.graph());
 
     for (; ei != ei_end; ++ei)
     {
@@ -298,37 +311,22 @@ BlueprintImpl
 
       for( auto const & othersEntry : othersProperties )
       {
+        const ParameterMapType::const_iterator foundProperty = ownProperties.find(othersEntry.first);
+
         // Does other use a property key that already exists in this component?
-        if( ownProperties.count( othersEntry.first ) )
+        if (foundProperty != ownProperties.cend())
         {
-          auto && ownValues   = ownProperties[ othersEntry.first ];
-          auto && otherValues = othersEntry.second;
           // Are the property values equal?
-          if( ownValues.size() != otherValues.size() )
+          if (foundProperty->second != othersEntry.second)
           {
-            // No, based on the number of values we see that it is different. Blueprints cannot be Composed
+            // No, Blueprints cannot be Composed
             this->m_Graph = graph_backup;
             return false;
-          }
-          else
-          {
-            ParameterValueType::const_iterator ownValue;
-            ParameterValueType::const_iterator otherValue;
-            for( ownValue = ownValues.begin(), otherValue = otherValues.begin(); ownValue != ownValues.end(); ++ownValue, ++otherValue )
-            {
-              if( *otherValue != *ownValue )
-              {
-                // No, at least one value is different. Blueprints cannot be Composed
-                this->m_Graph = graph_backup;
-                return false;
-              }
-            }
           }
         }
         else
         {
           // Property key doesn't exist yet, add entry to this component
-          auto ownProperties = this->GetComponent( componentName );
           ownProperties[ othersEntry.first ] = othersEntry.second;
           this->SetComponent( componentName, ownProperties );
         }
@@ -343,9 +341,9 @@ BlueprintImpl
   // Copy-in all connections (Edges)
   for( auto const & componentName : other.GetComponentNames() )
   {
-    for( auto incomingName : other.GetInputNames( componentName ) )
+    for( const auto& incomingName : other.GetInputNames( componentName ) )
     {
-      for (auto connectionName : other.GetConnectionNames(incomingName, componentName ) )
+      for (const auto& connectionName : other.GetConnectionNames(incomingName, componentName ) )
       {
         // Does other blueprint have a connection that already exists?
         if (this->ConnectionExists(incomingName, componentName, connectionName ))
@@ -356,40 +354,24 @@ BlueprintImpl
 
           for( auto const & othersEntry : othersProperties )
           {
+            const ParameterMapType::const_iterator foundProperty = ownProperties.find(othersEntry.first);
+
             // Does other use a property key that already exists in this component?
-            if( ownProperties.count( othersEntry.first ) )
+            if (foundProperty != ownProperties.cend())
             {
-              auto && ownValues   = ownProperties[ othersEntry.first ];
-              auto && otherValues = othersEntry.second;
               // Are the property values equal?
-              if( ownValues.size() != otherValues.size() )
+              if (foundProperty->second != othersEntry.second)
               {
-                // No, based on the number of values we see that it is different. Blueprints cannot be Composed
+                // No, Blueprints cannot be Composed
                 this->m_Graph = graph_backup;
                 return false;
-              }
-              else
-              {
-                ParameterValueType::const_iterator ownValue;
-                ParameterValueType::const_iterator otherValue;
-                for( ownValue = ownValues.begin(), otherValue = otherValues.begin(); ownValue != ownValues.end(); ++ownValue, ++otherValue )
-                {
-                  if( *otherValue != *ownValue )
-                  {
-                    // No, at least one value is different. Blueprints cannot be Composed
-                    this->m_Graph = graph_backup;
-                    return false;
-                  }
-                }
               }
             }
             else
             {
               // Property key doesn't exist yet, add entry to this component
-              auto ownProperties = this->GetConnection( incomingName, componentName, connectionName );
               ownProperties[ othersEntry.first ] = othersEntry.second;
               this->SetConnection( incomingName, componentName, ownProperties, connectionName );
-              return true;
             }
           } // end loop otherProperties
         }
@@ -402,7 +384,7 @@ BlueprintImpl
     }
   }
 
-  
+  return true;
 }
 
 BlueprintImpl::ComponentNamesType
@@ -446,7 +428,7 @@ BlueprintImpl
   
   boost::topological_sort(this->m_Graph, std::back_inserter(indexContainer));
 
-  for (std::vector< ComponentIndexType >::reverse_iterator ii = indexContainer.rbegin(); ii != indexContainer.rend(); ++ii)
+  for (auto ii = indexContainer.rbegin(); ii != indexContainer.rend(); ++ii)
   {
     container.push_back(boost::get(boost::vertex_all, this->m_Graph, *ii).name);
   }
@@ -462,7 +444,7 @@ BlueprintImpl
 
   boost::graph_traits<GraphType>::out_edge_iterator ei, ei_end;
   // too bad edge_range_by_label doesn't exist
-  boost::tie(ei, ei_end) = boost::edge_range(this->m_Graph.vertex(upstream), this->m_Graph.vertex(downstream), this->m_Graph.graph());
+  std::tie(ei, ei_end) = boost::edge_range(this->m_Graph.vertex(upstream), this->m_Graph.vertex(downstream), this->m_Graph.graph());
 
   for (; ei != ei_end; ++ei)
   {
@@ -485,7 +467,7 @@ BlueprintImpl
 }
 
 BlueprintImpl::ParameterValueType
-BlueprintImpl::VectorizeValues(ComponentOrConnectionTreeType & componentOrConnectionTree)
+BlueprintImpl::VectorizeValues(const PropertyTreeType& componentOrConnectionTree)
 {
   std::string        propertySingleValue = componentOrConnectionTree.data();
   ParameterValueType propertyMultiValue;
@@ -493,9 +475,9 @@ BlueprintImpl::VectorizeValues(ComponentOrConnectionTreeType & componentOrConnec
   {
     propertyMultiValue.push_back(value.second.data());
   }
-  if (propertyMultiValue.size() > 0)
+  if (!propertyMultiValue.empty())
   {
-    if (propertySingleValue != "")
+    if (!propertySingleValue.empty())
     {
       throw std::invalid_argument("XML tree should have either 1 unnamed element or multiple named properties");
     }
@@ -510,26 +492,31 @@ BlueprintImpl::VectorizeValues(ComponentOrConnectionTreeType & componentOrConnec
 void
 BlueprintImpl::MergeFromFile(const std::string & fileNameString)
 {
-  PathType fileName(fileNameString);
+  const PathType fileName(fileNameString);
+  const auto parentPath = fileName.parent_path();
 
   this->m_LoggerImpl->Log(LogLevel::INF, "Loading {0} ... ", fileName);
-  auto propertyTree = ReadPropertyTree(fileName);
+  const auto propertyTree = ReadPropertyTree(fileName);
   this->m_LoggerImpl->Log(LogLevel::INF, "Loading {0} ... Done", fileName);
 
   this->m_LoggerImpl->Log(LogLevel::INF, "Checking {0} for include files ... ", fileName);
-  auto includesList = FindIncludes(propertyTree);
 
-  if (includesList.size() > 0)
+  for (auto const & includePath : FindIncludes(propertyTree))
   {
-    for (auto const & includePath : includesList)
+    this->m_LoggerImpl->Log(LogLevel::INF, "Including file {0} ... ", includePath);
+
+    if (includePath.is_relative() && ! parentPath.empty())
     {
-      this->m_LoggerImpl->Log(LogLevel::INF, "Including file {0} ... ", includePath);
+      const auto absoluteIncludePath = parentPath / includePath;
+      this->MergeFromFile(absoluteIncludePath.string());
+    }
+    else
+    {
       this->MergeFromFile(includePath.string());
     }
   }
   this->m_LoggerImpl->Log(LogLevel::INF, "Checking {0} for include files ... done", fileName);
   this->MergeProperties(propertyTree);
-  return;
 }
 
 void
@@ -563,20 +550,18 @@ BlueprintImpl::PathsType
 BlueprintImpl::FindIncludes(const PropertyTreeType & propertyTree)
 {
   PathsType paths;
-  bool FoundIncludes = false;
-  BOOST_FOREACH(const PropertyTreeType::value_type & v, propertyTree.equal_range("Include"))
-  {
-    if (FoundIncludes)
-    {
-      std::runtime_error("Only 1 listing of Includes is allowed per Blueprint file");
-    }
+  const auto iteratorPair = propertyTree.equal_range("Include");
 
+  if (iteratorPair.first != iteratorPair.second)
+  {
+    if (std::next(iteratorPair.first) != iteratorPair.second)
+    {
+      throw std::runtime_error("Only 1 listing of Includes is allowed per Blueprint file");
+    }
+    const PropertyTreeType::value_type & v = *iteratorPair.first;
     auto const pathsStrings = VectorizeValues(v.second);
     // convert vector of strings to list of boost::path-s
-    paths.resize(pathsStrings.size());
-    std::transform(pathsStrings.begin(), pathsStrings.end(), paths.begin(),
-      [](std::string p) { return PathType(p); });
-    FoundIncludes = true;
+    paths = PathsType(pathsStrings.cbegin(), pathsStrings.cend());
   }
   return paths;
 }
@@ -587,7 +572,7 @@ BlueprintImpl::FromPropertyTree(const PropertyTreeType & pt)
 {
   Blueprint::Pointer blueprint = Blueprint::New();
 
-  BOOST_FOREACH(const PropertyTreeType::value_type & v, pt.equal_range("Component"))
+  for(const PropertyTreeType::value_type & v: pt.get_child("Components"))
   {
     std::string      componentName;
     ParameterMapType componentPropertyMap;
@@ -608,45 +593,48 @@ BlueprintImpl::FromPropertyTree(const PropertyTreeType & pt)
     blueprint->SetComponent(componentName, componentPropertyMap);
   }
 
-  BOOST_FOREACH(const PropertyTreeType::value_type & v, pt.equal_range("Connection"))
-  {
-    std::string connectionName = v.second.data();
-    if (connectionName != "")
+  const boost::optional< const PropertyTreeType& > connections_exist = pt.get_child_optional( "Connections" );
+  if(connections_exist) {
+    for(const PropertyTreeType::value_type & v: pt.get_child("Connections"))
     {
-      this->m_LoggerImpl->Log(LogLevel::TRC, "Found {0}, but connection names are ignored.", connectionName);
+      std::string connectionName = v.second.data();
+      if (!connectionName.empty())
+      {
+        this->m_LoggerImpl->Log(LogLevel::TRC, "Found {0}, but connection names are ignored.", connectionName);
+      }
+      std::string      outName;
+      std::string      inName;
+      ParameterMapType componentPropertyMap;
+
+      for (auto const & elm : v.second)
+      {
+        const std::string & connectionKey = elm.first;
+
+        if (connectionKey == "Out")
+        {
+          outName = elm.second.data();
+          continue;
+        }
+        else if (connectionKey == "In")
+        {
+          inName = elm.second.data();
+          continue;
+        }
+        else if (connectionKey == "Name")
+        {
+          this->m_LoggerImpl->Log(LogLevel::WRN, "Connections with key 'Name' are ignored.");
+          continue;
+        }
+        else
+        {
+          ParameterValueType propertyMultiValue = VectorizeValues(elm.second);
+          std::string        propertyKey = elm.first;
+          componentPropertyMap[propertyKey] = propertyMultiValue;
+        }
+      }
+
+      blueprint->SetConnection(outName, inName, componentPropertyMap);
     }
-    std::string      outName;
-    std::string      inName;
-    ParameterMapType componentPropertyMap;
-
-    for (auto const & elm : v.second)
-    {
-      const std::string & connectionKey = elm.first;
-
-      if (connectionKey == "Out")
-      {
-        outName = elm.second.data();
-        continue;
-      }
-      else if (connectionKey == "In")
-      {
-        inName = elm.second.data();
-        continue;
-      }
-      else if (connectionKey == "Name")
-      {
-        this->m_LoggerImpl->Log(LogLevel::WRN, "Connections with key 'Name' are ignored.");
-        continue;
-      }
-      else
-      {
-        ParameterValueType propertyMultiValue = VectorizeValues(elm.second);
-        std::string        propertyKey = elm.first;
-        componentPropertyMap[propertyKey] = propertyMultiValue;
-      }
-    }
-
-    blueprint->SetConnection(outName, inName, componentPropertyMap);
   }
   return blueprint;
 }
@@ -654,7 +642,7 @@ BlueprintImpl::FromPropertyTree(const PropertyTreeType & pt)
 void
 BlueprintImpl::MergeProperties(const PropertyTreeType & pt)
 {
-  BOOST_FOREACH(const PropertyTreeType::value_type & v, pt.equal_range("Component"))
+  for(const PropertyTreeType::value_type & v: pt.get_child("Components"))
   {
     std::string      componentName;
     ParameterMapType newProperties;
@@ -677,41 +665,26 @@ BlueprintImpl::MergeProperties(const PropertyTreeType & pt)
     if (this->ComponentExists(componentName))
     {
       // Component exists, check if properties can be merged
-      auto currentProperties = this->GetComponent(componentName);
+      auto ownProperties = this->GetComponent(componentName);
 
       for (auto const & othersEntry : newProperties)
       {
+        const ParameterMapType::const_iterator foundProperty = ownProperties.find(othersEntry.first);
+
         // Does other use a property key that already exists in this component?
-        if (currentProperties.count(othersEntry.first))
+        if (foundProperty != ownProperties.cend())
         {
-          auto && ownValues = currentProperties[othersEntry.first];
-          auto && otherValues = othersEntry.second;
           // Are the property values equal?
-          if (ownValues.size() != otherValues.size())
+          if (foundProperty->second != othersEntry.second)
           {
-            // No, based on the number of values we see that it is different. Blueprints cannot be Composed
+            // No, Blueprints cannot be Composed
             this->m_LoggerImpl->Log(LogLevel::ERR, "Merging blueprints failed : Component properties cannot be redefined");
             throw std::invalid_argument("Merging blueprints failed : Component properties cannot be redefined");
-          }
-          else
-          {
-            ParameterValueType::const_iterator ownValue;
-            ParameterValueType::const_iterator otherValue;
-            for (ownValue = ownValues.begin(), otherValue = otherValues.begin(); ownValue != ownValues.end(); ++ownValue, ++otherValue)
-            {
-              if (*otherValue != *ownValue)
-              {
-                // No, at least one value is different. Blueprints cannot be Composed
-                this->m_LoggerImpl->Log(LogLevel::ERR, "Merging blueprints failed : Component properties cannot be redefined");
-                throw std::invalid_argument("Merging blueprints failed: Component properties cannot be redefined");
-              }
-            }
           }
         }
         else
         {
           // Property key doesn't exist yet, add entry to this component
-          auto ownProperties = this->GetComponent(componentName);
           ownProperties[othersEntry.first] = othersEntry.second;
           this->SetComponent(componentName, ownProperties);
         }
@@ -724,93 +697,69 @@ BlueprintImpl::MergeProperties(const PropertyTreeType & pt)
     }
   }
 
-  BOOST_FOREACH(const PropertyTreeType::value_type & v, pt.equal_range("Connection"))
-  {
-    std::string connectionName = v.second.data();
-
-    std::string      outName;
-    std::string      inName;
-    ParameterMapType newProperties;
-
-    for (auto const & elm : v.second)
+  const boost::optional< const PropertyTreeType& > connections_exist = pt.get_child_optional( "Connections" );
+  if(connections_exist) {
+    for(const PropertyTreeType::value_type & v: pt.get_child("Connections"))
     {
-      const std::string & connectionKey = elm.first;
+      std::string connectionName = v.second.data();
 
-      if (connectionKey == "Out")
-      {
-        outName = elm.second.data();
-        continue;
-      }
-      else if (connectionKey == "In")
-      {
-        inName = elm.second.data();
-        continue;
-      }
-      else if (connectionKey == "Name")
-      {
-        if (connectionName != "")
-        {
-          this->m_LoggerImpl->Log(LogLevel::WRN, "Connection Name '{}' is overridden by '{}'", connectionName, elm.second.data());
-        }
-        connectionName = elm.second.data();
-        continue;
-      }
-      else
-      {
-        ParameterValueType propertyMultiValue = VectorizeValues(elm.second);
-        std::string        propertyKey = elm.first;
-        newProperties[propertyKey] = propertyMultiValue;
-      }
-    }
+      std::string outName;
+      std::string inName;
+      ParameterMapType newProperties;
 
-    // Does the blueprint have a connection that already exists?
-    if (this->ConnectionExists(outName, inName, connectionName))
-    {
-      // Connection exists, check if properties can be merged
-      auto ownProperties = this->GetConnection(outName, inName, connectionName);
+      for (auto const &elm : v.second) {
+        const std::string &connectionKey = elm.first;
 
-      for (auto const & othersEntry : newProperties)
-      {
-        // Does newProperties use a key that already exists in this component?
-        if (ownProperties.count(othersEntry.first))
-        {
-          auto && ownValues = ownProperties[othersEntry.first];
-          auto && otherValues = othersEntry.second;
-          // Are the property values equal?
-          if (ownValues.size() != otherValues.size())
-          {
-            // No, based on the number of values we see that it is different. Blueprints cannot be Composed
-            this->m_LoggerImpl->Log(LogLevel::ERR, "Merging blueprints failed : Connection properties cannot be redefined");
-            throw std::invalid_argument("Merging blueprints failed: Connection properties cannot be redefined");
+        if (connectionKey == "Out") {
+          outName = elm.second.data();
+          continue;
+        } else if (connectionKey == "In") {
+          inName = elm.second.data();
+          continue;
+        } else if (connectionKey == "Name") {
+          if (!connectionName.empty()) {
+            this->m_LoggerImpl->Log(LogLevel::WRN, "Connection Name '{}' is overridden by '{}'", connectionName,
+                                    elm.second.data());
           }
-          else
+          connectionName = elm.second.data();
+          continue;
+        } else {
+          ParameterValueType propertyMultiValue = VectorizeValues(elm.second);
+          std::string propertyKey = elm.first;
+          newProperties[propertyKey] = propertyMultiValue;
+        }
+      }
+
+      // Does the blueprint have a connection that already exists?
+      if (this->ConnectionExists(outName, inName, connectionName)) {
+        // Connection exists, check if properties can be merged
+        auto ownProperties = this->GetConnection(outName, inName, connectionName);
+
+        for (auto const &othersEntry : newProperties)
+        {
+          const ParameterMapType::const_iterator foundProperty = ownProperties.find(othersEntry.first);
+
+          // Does newProperties use a key that already exists in this component?
+          if (foundProperty != ownProperties.cend())
           {
-            ParameterValueType::const_iterator ownValue;
-            ParameterValueType::const_iterator otherValue;
-            for (ownValue = ownValues.begin(), otherValue = otherValues.begin(); ownValue != ownValues.end(); ++ownValue, ++otherValue)
+            // Are the property values equal?
+            if (foundProperty->second != othersEntry.second)
             {
-              if (*otherValue != *ownValue)
-              {
-                // No, at least one value is different. Blueprints cannot be Composed
-                this->m_LoggerImpl->Log(LogLevel::ERR, "Merging blueprints failed : Connection properties cannot be redefined");
-                throw std::invalid_argument("Merging blueprints failed: Connection properties cannot be redefined");
-              }
+              // No, Blueprints cannot be Composed
+              this->m_LoggerImpl->Log(LogLevel::ERR, "Merging blueprints failed: Connection property {0} redefined.",
+                                      othersEntry.first);
+              throw std::invalid_argument("Merging blueprints failed: Connection properties cannot be redefined.");
             }
+          } else {
+            // Property key doesn't exist yet, add entry to this component
+            ownProperties[othersEntry.first] = othersEntry.second;
+            this->SetConnection(outName, inName, ownProperties, connectionName);
           }
         }
-        else
-        {
-          // Property key doesn't exist yet, add entry to this component
-          //auto ownProperties = this->GetConnection(incomingName, componentName);
-          ownProperties[othersEntry.first] = othersEntry.second;
-          this->SetConnection(outName, inName, ownProperties, connectionName);
-        }
+      } else {
+        // Create Component copying properties of other
+        this->SetConnection(outName, inName, newProperties, connectionName);
       }
-    }
-    else
-    {
-      // Create Component copying properties of other
-      this->SetConnection(outName, inName, newProperties, connectionName);
     }
   }
 }
